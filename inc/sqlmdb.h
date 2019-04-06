@@ -81,7 +81,7 @@ class TableBuilder
 {
 public:
     TableBuilder(boost::string_view tableName) :
-        mTableName(tableName),
+        mTableName(tableName.to_string()),
         mStatus(TableBuilderStatus::Ok)
     {
     }
@@ -151,6 +151,17 @@ public:
             {
                 mStatus = TableBuilderStatus::ErrSchemaPkNotFound;
             }
+
+            if (ColumnType::IntAuto == iter->second)
+            {
+                numAutoIntInPk++;
+            }
+        }
+
+        if (numAutoInt != numAutoIntInPk)
+        {
+            mStatus = TableBuilderStatus::ErrSchemaAutoIntPk;
+            return *this;
         }
 
         if (1 < numAutoInt)
@@ -169,13 +180,31 @@ public:
                 const auto pk   = pks.begin()->to_string();
                 const auto type = mColumns[pk];
 
-                if (ColumnType::Int)
+                switch (type)
+                {
+                case ColumnType::Int:
+                case ColumnType::IntAuto:
+                    mPk     = pk;
+                    mPkType = type;
+                    break;
+                default:
+                {
+                    setDefaultPkSchema();
+
+                    buildUniqueIndex();
+                }
+                break;
+                }
             }
             else
             {
                 setDefaultPkSchema();
+
+                buildUniqueIndex();
             }
         }
+
+        return *this;
     }
 
     TableBuilderStatus build()
@@ -195,6 +224,8 @@ protected:
         mPk     = defaultPk().to_string();
         mPkType = ColumnType::IntAuto;
     }
+
+    void buildUniqueIndex() {}
 
 private:
     TableBuilderStatus mStatus;
