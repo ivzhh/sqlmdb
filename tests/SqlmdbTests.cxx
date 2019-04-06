@@ -57,11 +57,9 @@ TEST_F(SqlmdbTests, EndianTests)
     }
 
     {
-        TableBuilder tb(
-            "a",
-            { ColumnType::Int, ColumnType::Float, ColumnType::Blob },
-            { "c", "d", "e" },
-            { "a" });
+        TableBuilder tb("a");
+        tb.init(
+            { ColumnType::Int, ColumnType::Float, ColumnType::Blob }, { "c", "d", "e" }, { "a" });
     }
 }
 } // namespace
