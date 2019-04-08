@@ -13,6 +13,7 @@
 
 // 3rd party headers
 #include <lmdb.h>
+#include <msgpack.hpp>
 
 // my headers
 
@@ -195,7 +196,7 @@ public:
         mRc = mdb_env_open(mEnv, envPath.to_string().c_str(), flags, 0664);
 
         Transaction txn = beginTransaction();
-        mRc             = mdb_open(txn(), NULL, 0, &mDbs[0]);
+        mRc             = mdb_dbi_open(txn(), NULL, 0, &mDbs[0]);
         mRc             = txn.commit();
 
         return mRc;
