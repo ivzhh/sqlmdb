@@ -29,14 +29,10 @@ public:
     };
 
 public:
-    LmdbErr() { reset(); }
-    LmdbErr(int rc) : LmdbErr() { *this = rc; }
-    LmdbErr(LmdbErr && other) : LmdbErr()
-    {
-        *this = other;
-        other.reset();
-    }
-    LmdbErr(const LmdbErr & other) : LmdbErr() { *this = other; }
+    LmdbErr();
+    LmdbErr(int rc);
+    LmdbErr(LmdbErr && other);
+    LmdbErr(const LmdbErr & other);
 
     /**
      * @brief Set current error code
@@ -50,45 +46,15 @@ public:
      * @param rc LMDB error code
      * @return LmdbErr&
      */
-    LmdbErr & operator=(int rc)
-    {
-        if (!mRc && !mChecked)
-            throw ErrorNotChecked();
+    LmdbErr & operator=(int rc);
 
-        mRc      = rc;
-        mChecked = false;
+    LmdbErr & operator=(const LmdbErr & other);
 
-        return *this;
-    }
+    void reset();
 
-    LmdbErr & operator=(const LmdbErr & other)
-    {
-        if (!mRc && !mChecked)
-            throw ErrorNotChecked();
+    strv toString();
 
-        mRc      = other.mRc;
-        mChecked = other.mChecked;
-
-        return *this;
-    }
-
-    inline void reset()
-    {
-        mRc      = 0;
-        mChecked = false;
-    }
-
-    strv toString()
-    {
-        markChecked();
-        return mdb_strerror(mRc);
-    }
-
-    int rc()
-    {
-        markChecked();
-        return mRc;
-    }
+    int rc();
 
     /**
      * @brief Error happens
@@ -103,7 +69,7 @@ public:
     }
 
 protected:
-    void markChecked() { mChecked = true; }
+    void markChecked();
 
 private:
     int mRc;
@@ -113,37 +79,19 @@ private:
 class Transaction
 {
 public:
-    Transaction() : Transaction(nullptr) {}
-    Transaction(MDB_txn * txn) : mTxn(txn) {}
-    Transaction(Transaction && other) : mTxn(other.mTxn) { other.mTxn = nullptr; }
-    Transaction(Transaction & other)       = delete;
+    Transaction();
+    Transaction(MDB_txn * txn);
+    Transaction(Transaction && other);
     Transaction(const Transaction & other) = delete;
 
-    LmdbErr && commit()
-    {
-        LmdbErr rc;
-        rc = mdb_txn_commit(mTxn);
-        if (rc)
-            mTxn = nullptr;
-        return std::move(rc);
-    }
+    LmdbErr && commit();
 
-    void abort()
-    {
-        if (mTxn)
-            mdb_txn_abort(mTxn);
-        mTxn = nullptr;
-    }
+    void abort();
 
-    ~Transaction()
-    {
-        if (mTxn)
-            mdb_txn_abort(mTxn);
-        mTxn = nullptr;
-    }
+    ~Transaction();
 
-    MDB_txn ** operator&() { return &mTxn; }
-    MDB_txn * operator()() { return mTxn; }
+    MDB_txn ** operator&();
+    MDB_txn * operator()();
 
 private:
     MDB_txn * mTxn;
@@ -166,41 +114,16 @@ private:
     };
 
 public:
-    Lmdb() : mEnv(nullptr), mDbs() {}
-    Lmdb(Lmdb & other) : Lmdb(std::move(other)) {}
-    Lmdb(Lmdb && other) : mEnv(other.mEnv), mDbs(other.mDbs)
-    {
-        other.mEnv = nullptr;
-        other.mDbs.fill(MDB_dbi());
-    }
-
-    Lmdb(const Lmdb & other) = delete;
+    Lmdb();
+    Lmdb(Lmdb & other);
+    Lmdb(Lmdb && other);
     Lmdb & operator=(const Lmdb & other) = delete;
     Lmdb & operator=(Lmdb && other) = delete;
 
     operator bool() { return !!mEnv; }
 
 public:
-    LmdbErr init(strv envPath, int flags = 0)
-    {
-        mRc = mdb_env_create(&mEnv);
-
-        if (mRc)
-            return mRc;
-
-        mRc = mdb_env_set_mapsize(mEnv, INCREMENT_STEP);
-
-        if (mRc)
-            return mRc;
-
-        mRc = mdb_env_open(mEnv, envPath.to_string().c_str(), flags, 0664);
-
-        Transaction txn = beginTransaction();
-        mRc             = mdb_dbi_open(txn(), NULL, 0, &mDbs[0]);
-        mRc             = txn.commit();
-
-        return mRc;
-    }
+    LmdbErr init(strv envPath, int flags = 0);
 
     /**
      * @brief Create a transaction for operation
@@ -210,16 +133,10 @@ public:
      * @param flags
      * @return Transaction&&
      */
-    Transaction && beginTransaction(int flags = 0)
-    {
-        Transaction txn;
-        mRc = mdb_txn_begin(mEnv, NULL, 0, &txn);
-
-        return std::move(txn);
-    }
+    Transaction && beginTransaction(int flags = 0);
 
 public:
-    strv errorMessage() { return mRc.toString(); }
+    strv errorMessage();
 
 private:
     MDB_env * mEnv;
@@ -291,14 +208,7 @@ public:
      *
      * @param columns
      */
-    Index(std::initializer_list<strv> & columns)
-    {
-        mColumns.reserve(columns.size());
-        for (auto c : columns)
-        {
-            mColumns.emplace_back(c.to_string());
-        }
-    }
+    Index(std::initializer_list<strv> & columns);
 
 protected:
     std::vector<std::string> mColumns;
@@ -307,7 +217,7 @@ protected:
 class UniqueIndex : public Index
 {
 public:
-    UniqueIndex(std::initializer_list<strv> & columns) : Index(columns) {}
+    UniqueIndex(std::initializer_list<strv> & columns);
 };
 
 /**
@@ -320,11 +230,7 @@ public:
 class TableBuilder
 {
 public:
-    TableBuilder(strv tableName) :
-        mTableName(tableName.to_string()),
-        mStatus(TableBuilderStatus::Ok)
-    {
-    }
+    TableBuilder(strv tableName);
     /**
      * @brief Construct a new TableBuilder object
      *
@@ -345,145 +251,20 @@ public:
     TableBuilder & init(
         std::initializer_list<ColumnType> && types,
         std::initializer_list<strv> && columnNames,
-        std::initializer_list<strv> && pks)
-    {
-        if (types.size() != columnNames.size())
-        {
-            mStatus = TableBuilderStatus::ErrSchemaMismatchColumns;
-            return *this;
-        }
+        std::initializer_list<strv> && pks);
 
-        size_t numAutoInt = 0;
-
-        {
-            /*
-             * Construct all column names and types
-             * This block is to prevent scope leakage of typeIter and nameIter
-             */
-            auto typeIter = types.begin();
-            auto nameIter = columnNames.begin();
-
-            for (; types.end() != typeIter && columnNames.end() != nameIter; ++typeIter, ++nameIter)
-            {
-                /*
-                 * Each table has maximum **one** auto incremental column
-                 * that one must be primary key
-                 */
-                if (ColumnType::IntAuto == *typeIter)
-                {
-                    numAutoInt++;
-                }
-                /*
-                 * nsert into map. Pretend this opertaion is `move()`
-                 * and try to finish all tasks before this.
-                 */
-                auto result = mColumns.emplace(*nameIter, *typeIter);
-
-                if (!result.second)
-                {
-                    mStatus = TableBuilderStatus::ErrSchemaColumnNameDuplicate;
-                    return *this;
-                }
-            }
-        }
-
-        auto numAutoIntInPk = 0;
-        /*
-         * If any primary key is given, the name must exist
-         */
-        for (auto pk_ : pks)
-        {
-            auto pk         = pk_.to_string();
-            const auto iter = mColumns.find(pk);
-
-            if (mColumns.end() == iter)
-            {
-                mStatus = TableBuilderStatus::ErrSchemaPkNotFound;
-            }
-
-            if (ColumnType::IntAuto == iter->second)
-            {
-                numAutoIntInPk++;
-            }
-        }
-
-        if (numAutoInt != numAutoIntInPk)
-        {
-            mStatus = TableBuilderStatus::ErrSchemaAutoIntPk;
-            return *this;
-        }
-
-        if (1 < numAutoInt)
-        {
-            mStatus = TableBuilderStatus::ErrSchemaAutoIntPk;
-            return *this;
-        }
-        else // numAutoInt == 0 || == 1
-        {
-            if (0 == pks.size())
-            {
-                setDefaultPkSchema();
-            }
-            else if (1 == pks.size())
-            {
-                const auto pk   = pks.begin()->to_string();
-                const auto type = mColumns[pk];
-
-                switch (type)
-                {
-                case ColumnType::Int:
-                case ColumnType::IntAuto:
-                    mPk     = pk;
-                    mPkType = type;
-                    break;
-                default:
-                {
-                    setDefaultPkSchema();
-
-                    buildUniqueIndex(hiddenPk(), pks);
-                }
-                break;
-                }
-            }
-            else
-            {
-                setDefaultPkSchema();
-
-                buildUniqueIndex(hiddenPk(), pks);
-            }
-        }
-
-        return *this;
-    }
-
-    TableBuilderStatus build(Lmdb & db)
-    {
-        if (TableBuilderStatus::Ok != mStatus)
-            return mStatus;
-
-        if (db)
-        {
-        }
-        else
-            return TableBuilderStatus::ErrDbNotValid;
-
-        return TableBuilderStatus::Ok;
-    }
+    TableBuilderStatus build(Lmdb & db);
 
 public:
-    constexpr strv defaultPk() { return "_rid_"; }
-    constexpr strv hiddenPk() { return "_pk_"; }
+    constexpr strv defaultPk() const;
+    constexpr strv hiddenPk() const;
 
 protected:
     /**
      * @brief Row ID is the default/hidden primary key
      *
      */
-    void setDefaultPkSchema()
-    {
-        mPk     = defaultPk().to_string();
-        mPkType = ColumnType::IntAuto;
-    }
+    void setDefaultPkSchema();
 
     /**
      * @brief Recording the columns in order and make an unique index
@@ -491,10 +272,7 @@ protected:
      * @param indexName
      * @param columns
      */
-    void buildUniqueIndex(strv indexName, std::initializer_list<strv> & columns)
-    {
-        mIndices.emplace(indexName.to_string(), std::make_unique<UniqueIndex>(columns));
-    }
+    void buildUniqueIndex(strv indexName, std::initializer_list<strv> & columns);
 
 private:
     TableBuilderStatus mStatus;

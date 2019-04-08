@@ -1,5 +1,5 @@
 CMAKE_MINIMUM_REQUIRED (VERSION 3.2)
-PROJECT (Test C CXX)
+PROJECT (sqlmdb C CXX)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -64,7 +64,14 @@ endforeach()
 
 ADD_EXECUTABLE(Main ${Common-files} main.cxx)
 
-SET(DEP_3rdParty Qt5::Core liblmdb.a pthread ${Boost_LIBRARIES})
+SET(DEP_3rdParty Qt5::Core lmdb ${Boost_LIBRARIES})
+
+IF (WIN32)
+	# https://github.com/google/benchmark/issues/634
+	LIST(APPEND DEP_3rdParty Shlwapi.lib)
+ELSEIF()
+	LIST(APPEND DEP_3rdParty pthread)
+ENDIF()
 
 SET_TARGET_PROPERTIES(Main PROPERTIES LINKER_LANGUAGE CXX)
 target_link_libraries(Main ${DEP_3rdParty})
@@ -91,7 +98,7 @@ endforeach()
 
 ADD_EXECUTABLE(Bench ${Bench-files} ${Common-files})
 
-target_link_libraries(Bench ${DEP_3rdParty} benchmark pthread)
+target_link_libraries(Bench ${DEP_3rdParty} benchmark)
 
 foreach(DIR tests)
 	MESSAGE(STATUS "processing ${DIR}")
@@ -109,7 +116,7 @@ endforeach()
 
 ADD_EXECUTABLE(Test ${Test-files} ${Common-files})
 
-target_link_libraries(Test ${DEP_3rdParty} gtest gmock pthread)
+target_link_libraries(Test ${DEP_3rdParty} gtest gmock)
 
 add_custom_target(
 clang-format-project-files
