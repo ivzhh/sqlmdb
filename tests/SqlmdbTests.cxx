@@ -3,7 +3,7 @@
 
 #include "sqlmdb.h"
 
-namespace
+namespace Tests
 {
 using namespace Sqlmdb;
 /// Test basic SQL support.

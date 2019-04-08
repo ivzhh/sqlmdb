@@ -5,6 +5,7 @@
 #include <map>
 #include <vector>
 #include <memory>
+#include <array>
 
 // Boost headers
 #include <boost/endian/buffers.hpp>
@@ -17,6 +18,139 @@
 
 namespace Sqlmdb
 {
+using strv = boost::string_view;
+
+class LmdbErr
+{
+public:
+    class ErrorNotChecked : public std::exception
+    {
+    };
+
+public:
+    LmdbErr() : mRc(0), mChecked(0) {}
+    LmdbErr(int rc) { *this = rc; }
+
+    /**
+     * @brief Set current error code
+     *
+     * If previously error code != 0 and error has not been checked,
+     * then throw exception to warn caller.
+     *
+     * An error is checked if LmdbErr has been implicitly used as boolean,
+     * or error string has been checked.
+     *
+     * @param rc LMDB error code
+     * @return LmdbErr&
+     */
+    LmdbErr & operator=(int rc)
+    {
+        if (!mRc && !mChecked)
+            throw ErrorNotChecked();
+
+        mRc      = rc;
+        mChecked = false;
+
+        return *this;
+    }
+
+    strv toString()
+    {
+        markChecked();
+        return mdb_strerror(mRc);
+    }
+
+    int rc()
+    {
+        markChecked();
+        return mRc;
+    }
+
+    /**
+     * @brief Error happens
+     *
+     * @return true
+     * @return false
+     */
+    operator bool()
+    {
+        markChecked();
+        return !!mRc;
+    }
+
+protected:
+    void markChecked() { mChecked = true; }
+
+private:
+    int mRc;
+    bool mChecked;
+};
+
+/**
+ * @brief A thin C++ wrapper on Lmdb C API
+ *
+ * The handle for this library should be either
+ * `std::unique_ptr` or `std::shared_ptr`.
+ *
+ */
+class Lmdb
+{
+private:
+    enum
+    {
+        NECESSARY_DBS  = 1,
+        INCREMENT_STEP = 10485760
+    };
+
+public:
+    Lmdb() : mEnv(nullptr), mDbs() {}
+    Lmdb(Lmdb & other) : Lmdb(std::move(other)) {}
+    Lmdb(Lmdb && other) : mEnv(other.mEnv), mDbs(other.mDbs)
+    {
+        other.mEnv = nullptr;
+        other.mDbs.fill(MDB_dbi());
+    }
+
+    Lmdb(const Lmdb & other) = delete;
+    Lmdb & operator=(const Lmdb & other) = delete;
+    Lmdb & operator=(Lmdb && other) = delete;
+
+public:
+    Lmdb & init(strv envPath, int flags = 0)
+    {
+        mRc = mdb_env_create(&mEnv);
+
+        if (mRc)
+            return *this;
+
+        mRc = mdb_env_set_mapsize(mEnv, INCREMENT_STEP);
+
+        if (mRc)
+            return *this;
+
+        mRc           = mdb_env_open(mEnv, envPath.to_string().c_str(), flags, 0664);
+        MDB_txn * txn = nullptr;
+        mRc           = mdb_txn_begin(mEnv, NULL, 0, &txn);
+        mRc           = mdb_open(txn, NULL, 0, &mDbs[0]);
+        mRc           = mdb_txn_commit(txn);
+
+        return *this;
+    }
+
+public:
+    strv errorMessage()
+    {
+        mErrorMessage = mdb_strerror(mRc);
+        return mErrorMessage;
+    }
+
+private:
+    MDB_env * mEnv;
+    std::array<MDB_dbi, NECESSARY_DBS> mDbs;
+    LmdbErr mRc;
+    strv mErrorMessage;
+};
+
 ///
 class Encoder
 {
@@ -80,7 +214,7 @@ public:
      *
      * @param columns
      */
-    Index(std::initializer_list<boost::string_view> & columns)
+    Index(std::initializer_list<strv> & columns)
     {
         mColumns.reserve(columns.size());
         for (auto c : columns)
@@ -96,7 +230,7 @@ protected:
 class UniqueIndex : public Index
 {
 public:
-    UniqueIndex(std::initializer_list<boost::string_view> & columns) : Index(columns) {}
+    UniqueIndex(std::initializer_list<strv> & columns) : Index(columns) {}
 };
 
 /**
@@ -109,7 +243,7 @@ public:
 class TableBuilder
 {
 public:
-    TableBuilder(boost::string_view tableName) :
+    TableBuilder(strv tableName) :
         mTableName(tableName.to_string()),
         mStatus(TableBuilderStatus::Ok)
     {
@@ -133,8 +267,8 @@ public:
      */
     TableBuilder & init(
         std::initializer_list<ColumnType> && types,
-        std::initializer_list<boost::string_view> && columnNames,
-        std::initializer_list<boost::string_view> && pks)
+        std::initializer_list<strv> && columnNames,
+        std::initializer_list<strv> && pks)
     {
         if (types.size() != columnNames.size())
         {
@@ -254,8 +388,8 @@ public:
     }
 
 public:
-    constexpr boost::string_view defaultPk() { return "_rid_"; }
-    constexpr boost::string_view hiddenPk() { return "_pk_"; }
+    constexpr strv defaultPk() { return "_rid_"; }
+    constexpr strv hiddenPk() { return "_pk_"; }
 
 protected:
     /**
@@ -268,9 +402,13 @@ protected:
         mPkType = ColumnType::IntAuto;
     }
 
-    void buildUniqueIndex(
-        boost::string_view indexName,
-        std::initializer_list<boost::string_view> & columns)
+    /**
+     * @brief Recording the columns in order and make an unique index
+     *
+     * @param indexName
+     * @param columns
+     */
+    void buildUniqueIndex(strv indexName, std::initializer_list<strv> & columns)
     {
         mIndices.emplace(indexName.to_string(), std::make_unique<UniqueIndex>(columns));
     }
