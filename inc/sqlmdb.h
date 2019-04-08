@@ -28,8 +28,14 @@ public:
     };
 
 public:
-    LmdbErr() : mRc(0), mChecked(0) {}
-    LmdbErr(int rc) { *this = rc; }
+    LmdbErr() { reset(); }
+    LmdbErr(int rc) : LmdbErr() { *this = rc; }
+    LmdbErr(LmdbErr && other) : LmdbErr()
+    {
+        *this = other;
+        other.reset();
+    }
+    LmdbErr(const LmdbErr & other) : LmdbErr() { *this = other; }
 
     /**
      * @brief Set current error code
@@ -52,6 +58,23 @@ public:
         mChecked = false;
 
         return *this;
+    }
+
+    LmdbErr & operator=(const LmdbErr & other)
+    {
+        if (!mRc && !mChecked)
+            throw ErrorNotChecked();
+
+        mRc      = other.mRc;
+        mChecked = other.mChecked;
+
+        return *this;
+    }
+
+    inline void reset()
+    {
+        mRc      = 0;
+        mChecked = false;
     }
 
     strv toString()
@@ -86,6 +109,45 @@ private:
     bool mChecked;
 };
 
+class Transaction
+{
+public:
+    Transaction() : Transaction(nullptr) {}
+    Transaction(MDB_txn * txn) : mTxn(txn) {}
+    Transaction(Transaction && other) : mTxn(other.mTxn) { other.mTxn = nullptr; }
+    Transaction(Transaction & other)       = delete;
+    Transaction(const Transaction & other) = delete;
+
+    LmdbErr && commit()
+    {
+        LmdbErr rc;
+        rc = mdb_txn_commit(mTxn);
+        if (rc)
+            mTxn = nullptr;
+        return std::move(rc);
+    }
+
+    void abort()
+    {
+        if (mTxn)
+            mdb_txn_abort(mTxn);
+        mTxn = nullptr;
+    }
+
+    ~Transaction()
+    {
+        if (mTxn)
+            mdb_txn_abort(mTxn);
+        mTxn = nullptr;
+    }
+
+    MDB_txn ** operator&() { return &mTxn; }
+    MDB_txn * operator()() { return mTxn; }
+
+private:
+    MDB_txn * mTxn;
+};
+
 /**
  * @brief A thin C++ wrapper on Lmdb C API
  *
@@ -115,40 +177,53 @@ public:
     Lmdb & operator=(const Lmdb & other) = delete;
     Lmdb & operator=(Lmdb && other) = delete;
 
+    operator bool() { return !!mEnv; }
+
 public:
-    Lmdb & init(strv envPath, int flags = 0)
+    LmdbErr init(strv envPath, int flags = 0)
     {
         mRc = mdb_env_create(&mEnv);
 
         if (mRc)
-            return *this;
+            return mRc;
 
         mRc = mdb_env_set_mapsize(mEnv, INCREMENT_STEP);
 
         if (mRc)
-            return *this;
+            return mRc;
 
-        mRc           = mdb_env_open(mEnv, envPath.to_string().c_str(), flags, 0664);
-        MDB_txn * txn = nullptr;
-        mRc           = mdb_txn_begin(mEnv, NULL, 0, &txn);
-        mRc           = mdb_open(txn, NULL, 0, &mDbs[0]);
-        mRc           = mdb_txn_commit(txn);
+        mRc = mdb_env_open(mEnv, envPath.to_string().c_str(), flags, 0664);
 
-        return *this;
+        Transaction txn = beginTransaction();
+        mRc             = mdb_open(txn(), NULL, 0, &mDbs[0]);
+        mRc             = txn.commit();
+
+        return mRc;
+    }
+
+    /**
+     * @brief Create a transaction for operation
+     *
+     * If creation fails, the error will trigger exception on first operation on transaction
+     *
+     * @param flags
+     * @return Transaction&&
+     */
+    Transaction && beginTransaction(int flags = 0)
+    {
+        Transaction txn;
+        mRc = mdb_txn_begin(mEnv, NULL, 0, &txn);
+
+        return std::move(txn);
     }
 
 public:
-    strv errorMessage()
-    {
-        mErrorMessage = mdb_strerror(mRc);
-        return mErrorMessage;
-    }
+    strv errorMessage() { return mRc.toString(); }
 
 private:
     MDB_env * mEnv;
     std::array<MDB_dbi, NECESSARY_DBS> mDbs;
     LmdbErr mRc;
-    strv mErrorMessage;
 };
 
 ///
@@ -204,6 +279,7 @@ enum class TableBuilderStatus
      * true PK. The user defined PK(s) are treated as unique index.
      */
     ErrSchemaAutoIntPk,
+    ErrDbNotValid
 };
 
 class Index
@@ -379,10 +455,16 @@ public:
         return *this;
     }
 
-    TableBuilderStatus build()
+    TableBuilderStatus build(Lmdb & db)
     {
         if (TableBuilderStatus::Ok != mStatus)
             return mStatus;
+
+        if (db)
+        {
+        }
+        else
+            return TableBuilderStatus::ErrDbNotValid;
 
         return TableBuilderStatus::Ok;
     }
