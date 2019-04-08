@@ -48,7 +48,7 @@ LINK_DIRECTORIES(
 	${Boost_LIBRARY_DIRS}
 )
 
-foreach(DIR src inc)
+foreach(DIR src)
 	MESSAGE(STATUS "processing ${DIR}")
 	file(GLOB_RECURSE TMP RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
 		${DIR}/*.cpp
@@ -62,7 +62,21 @@ foreach(DIR src inc)
     list(APPEND FILES_TO_FORMAT ${TMP})
 endforeach()
 
-ADD_EXECUTABLE(Main ${Common-files} main.cxx)
+foreach(DIR inc)
+	MESSAGE(STATUS "processing ${DIR}")
+	file(GLOB_RECURSE TMP RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+		${DIR}/*.cpp
+		${DIR}/*.h
+		${DIR}/*.hpp
+		${DIR}/*.c
+		${DIR}/*.cxx
+		${DIR}/*.cc
+		)
+	list(APPEND Common-headers ${TMP})
+    list(APPEND FILES_TO_FORMAT ${TMP})
+endforeach()
+
+ADD_LIBRARY(libsqlmdb ${Common-files} ${Common-headers})
 
 SET(DEP_3rdParty Qt5::Core lmdb ${Boost_LIBRARIES})
 
@@ -73,8 +87,8 @@ ELSEIF()
 	LIST(APPEND DEP_3rdParty pthread)
 ENDIF()
 
-SET_TARGET_PROPERTIES(Main PROPERTIES LINKER_LANGUAGE CXX)
-target_link_libraries(Main ${DEP_3rdParty})
+SET_TARGET_PROPERTIES(libsqlmdb PROPERTIES LINKER_LANGUAGE CXX)
+target_link_libraries(libsqlmdb ${DEP_3rdParty})
 
 set(CMAKE_CXX_FLAGS_COVERAGE "${CMAKE_CXX_FLAGS_RELEASE} -fprofile-arcs -ftest-coverage")
 
@@ -96,9 +110,9 @@ foreach(DIR bench)
     list(APPEND FILES_TO_FORMAT ${TMP})
 endforeach()
 
-ADD_EXECUTABLE(Bench ${Bench-files} ${Common-files})
+ADD_EXECUTABLE(Bench ${Bench-files} ${Common-headers})
 
-target_link_libraries(Bench ${DEP_3rdParty} benchmark)
+target_link_libraries(Bench ${DEP_3rdParty} benchmark libsqlmdb)
 
 foreach(DIR tests)
 	MESSAGE(STATUS "processing ${DIR}")
@@ -114,9 +128,9 @@ foreach(DIR tests)
     list(APPEND FILES_TO_FORMAT ${TMP})
 endforeach()
 
-ADD_EXECUTABLE(Test ${Test-files} ${Common-files})
+ADD_EXECUTABLE(Test ${Test-files} ${Common-headers})
 
-target_link_libraries(Test ${DEP_3rdParty} gtest gmock)
+target_link_libraries(Test ${DEP_3rdParty} gtest gmock libsqlmdb)
 
 add_custom_target(
 clang-format-project-files

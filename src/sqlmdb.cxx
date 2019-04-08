@@ -196,7 +196,7 @@ Sqlmdb::TableBuilder & Sqlmdb::TableBuilder::init(
              * Each table has maximum **one** auto incremental column
              * that one must be primary key
              */
-            if (ColumnType::IntAuto == *typeIter)
+            if (ColumnType::AutoInt == *typeIter)
             {
                 numAutoInt++;
             }
@@ -228,7 +228,7 @@ Sqlmdb::TableBuilder & Sqlmdb::TableBuilder::init(
             mStatus = TableBuilderStatus::ErrSchemaPkNotFound;
         }
 
-        if (ColumnType::IntAuto == iter->second)
+        if (ColumnType::AutoInt == iter->second)
         {
             numAutoIntInPk++;
         }
@@ -259,7 +259,7 @@ Sqlmdb::TableBuilder & Sqlmdb::TableBuilder::init(
             switch (type)
             {
             case ColumnType::Int:
-            case ColumnType::IntAuto:
+            case ColumnType::AutoInt:
                 mPk     = pk;
                 mPkType = type;
                 break;
@@ -310,7 +310,7 @@ constexpr Sqlmdb::strv Sqlmdb::TableBuilder::hiddenPk() const
 void Sqlmdb::TableBuilder::setDefaultPkSchema()
 {
     mPk     = defaultPk().to_string();
-    mPkType = ColumnType::IntAuto;
+    mPkType = ColumnType::AutoInt;
 }
 
 void Sqlmdb::TableBuilder::buildUniqueIndex(strv indexName, std::initializer_list<strv> & columns)
