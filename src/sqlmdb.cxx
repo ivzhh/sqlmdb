@@ -152,7 +152,9 @@ Sqlmdb::Lmdb::Lmdb(Lmdb && other) : mEnv(other.mEnv), mDbs(other.mDbs)
 
 Sqlmdb::Lmdb::Lmdb(Lmdb & other) : Lmdb(std::move(other)) {}
 
-Sqlmdb::Index::Index(std::initializer_list<strv> & columns)
+Sqlmdb::Index::Index(strv tableName, strv indexName, std::initializer_list<strv> & columns) :
+    mTableName(tableName),
+    mIndexName(indexName)
 {
     mColumns.reserve(columns.size());
     for (auto c : columns)
@@ -161,7 +163,22 @@ Sqlmdb::Index::Index(std::initializer_list<strv> & columns)
     }
 }
 
-Sqlmdb::UniqueIndex::UniqueIndex(std::initializer_list<strv> & columns) : Index(columns) {}
+Sqlmdb::LmdbErr Sqlmdb::Index::serialize(Lmdb & db)
+{
+    Sqlmdb::LmdbErr rc;
+
+    return rc;
+}
+
+void Sqlmdb::Index::serialize(std::string & key, std::string & value) {}
+
+Sqlmdb::UniqueIndex::UniqueIndex(
+    strv tableName,
+    strv indexName,
+    std::initializer_list<strv> & columns) :
+    Index(tableName, indexName, columns)
+{
+}
 
 Sqlmdb::TableBuilder::TableBuilder(strv tableName) :
     mTableName(tableName.to_string()),
@@ -315,5 +332,15 @@ void Sqlmdb::TableBuilder::setDefaultPkSchema()
 
 void Sqlmdb::TableBuilder::buildUniqueIndex(strv indexName, std::initializer_list<strv> & columns)
 {
-    mIndices.emplace(indexName.to_string(), std::make_unique<UniqueIndex>(columns));
+    mIndices.emplace(
+        indexName.to_string(), std::make_unique<UniqueIndex>(mTableName, indexName, columns));
+}
+
+Sqlmdb::Table::Table(TableBuilder && tb) :
+    mTableName(std::move(tb.mTableName)),
+    mColumns(std::move(tb.mColumns)),
+    mPk(std::move(tb.mPk)),
+    mPkType(std::move(tb.mPkType)),
+    mIndices(std::move(tb.mIndices))
+{
 }

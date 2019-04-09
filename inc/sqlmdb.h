@@ -16,6 +16,7 @@
 #include <msgpack.hpp>
 
 // my headers
+#include "sqlmdb_kv_encoder.h"
 
 namespace Sqlmdb
 {
@@ -144,27 +145,6 @@ private:
     LmdbErr mRc;
 };
 
-///
-class Encoder
-{
-public:
-    template <typename T>
-    static typename std::enable_if<std::is_integral<T>::value, void>::type
-    encode(std::string & buffer, T value)
-    {
-    }
-
-    template <typename T>
-    static typename std::enable_if<std::is_floating_point<T>::value, void>::type
-    encode(std::string & buffer, T value)
-    {
-    }
-};
-
-class Decoder
-{
-};
-
 /**
  * @brief The types of data that are supported by Sqlmdb
  *
@@ -181,24 +161,29 @@ enum class ColumnType
 /**
  * @brief The status of checking TableBuilder and update database metadata
  *
+ * Neither reordering the items nor inserting item before existing items are allowed.
+ * **Append-only** enforced.
  */
 enum class TableBuilderStatus
 {
-    Ok = 0, ///< Table schema passes checking and database update successfully
-    ErrSchemaMismatchColumns, ///< Table schema has some issues
-    ErrSchemaColumnNameDuplicate,
-    ErrSchemaPkNotFound,
+    Ok                       = 0, ///< Table schema passes checking and database update successfully
+    ErrSchemaMismatchColumns = 1, ///< Table schema has some issues
+    ErrSchemaColumnNameDuplicate = 2,
+    ErrSchemaPkNotFound          = 3,
     /**
      * @brief There is only one auto-incremental primary key
      *
-     * - If there is an `Int` PK, then `#AutoInt == 0`;
-     * - If there is an `AutoInt` PK, then `#AutoInt == 1`;
+     * - If there is an `Int` PK, then `# AutoInt == 0`;
+     * - If there is an `AutoInt` PK, then `# AutoInt == 1`;
      * - If there is a `Blob` PK or a combination `PK`, then a hidden `AutoInt` PK is created as
      * true PK. The user defined PK(s) are treated as unique index.
      */
-    ErrSchemaAutoIntPk,
-    ErrDbNotValid
+    ErrSchemaAutoIntPk = 4,
+    ErrDbNotValid      = 5
 };
+
+class TableBuilder;
+class Table;
 
 class Index
 {
@@ -206,18 +191,43 @@ public:
     /**
      * @brief Create an index with the **order** given by param columns
      *
+     * @param tableName
+     * @param indexName
      * @param columns
      */
-    Index(std::initializer_list<strv> & columns);
+    Index(strv tableName, strv indexName, std::initializer_list<strv> & columns);
+    virtual ~Index() {}
+
+    LmdbErr serialize(Lmdb & db);
+
+public:
+    void serialize(std::string & key, std::string & value);
 
 protected:
+    std::string mTableName;
+    std::string mIndexName;
     std::vector<std::string> mColumns;
 };
 
 class UniqueIndex : public Index
 {
 public:
-    UniqueIndex(std::initializer_list<strv> & columns);
+    UniqueIndex(strv tableName, strv indexName, std::initializer_list<strv> & columns);
+
+    virtual ~UniqueIndex() {}
+};
+
+class Table
+{
+public:
+    Table(TableBuilder && tb);
+
+private:
+    std::string mTableName;
+    std::map<std::string, ColumnType> mColumns;
+    std::string mPk;
+    ColumnType mPkType;
+    std::map<std::string, std::unique_ptr<Index>> mIndices;
 };
 
 /**
@@ -281,6 +291,9 @@ private:
     std::string mPk;
     ColumnType mPkType;
     std::map<std::string, std::unique_ptr<Index>> mIndices;
+
+    friend class Table;
+    friend class Index;
 };
 
 } // namespace Sqlmdb
